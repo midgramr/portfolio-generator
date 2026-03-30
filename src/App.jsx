@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useId } from "react";
 
 // High-level idea: create a single page with a 'edit' and 'preview' mode
 
@@ -8,7 +9,7 @@ function newEvent() {
 
 function App() {
   const [events, setEvents] = useState([newEvent()]);
-  const [editMode, setEditMode] = useState(true);
+  const [preview, setPreview] = useState(false);
 
   function addEvent() {
     setEvents((events) => [...events, newEvent()]);
@@ -20,84 +21,149 @@ function App() {
     );
   }
 
+  function togglePreview() {
+    setPreview((p) => !p);
+  }
+
   return (
     <div>
       {events.map((event, i) =>
-        editMode ? (
+        preview ? (
+          <EventPreview key={i} event={event} />
+        ) : (
           <EventForm
             key={i}
             event={event}
             onChange={(event) => updateEvent(event, i)}
           />
-        ) : (
-          <EventPreview />
         ),
       )}
-      <button onClick={addEvent}>Add event</button>
+      {!preview && <button onClick={addEvent}>Add event</button>}
+      <button onClick={togglePreview}>Toggle preview</button>
+    </div>
+  );
+}
+
+function EventPreview({ event }) {
+  function renderMedia() {
+    const mediaUrl = event.mediaFile
+      ? URL.createObjectURL(event.mediaFile)
+      : null;
+    if (mediaUrl) {
+      return event.mediaType === "image" ? (
+        <img src={mediaUrl} />
+      ) : event.mediaType === "audio" ? (
+        <></>
+      ) : (
+        <></>
+      );
+    } else {
+      return <div>No media uploaded.</div>;
+    }
+  }
+
+  const media = renderMedia();
+  return (
+    <div style={{ padding: "2rem", border: "1px solid black" }}>
+      <div>Name: {event.name}</div>
+      <div>Description: {event.desc}</div>
+      {media}
     </div>
   );
 }
 
 function EventForm({ event, onChange }) {
+  const formId = useId();
+
   function handleChange(e) {
-    onChange({ ...event, [e.target.name]: e.target.value });
+    const name = e.target.name.substr(e.target.name.indexOf("-") + 1);
+    let updated = { ...event, [name]: e.target.value };
+
+    if (name == "mediaType" && e.target.value != event.mediaType) {
+      updated = { ...updated, mediaFile: null };
+    }
+
+    onChange(updated);
   }
 
   function handleFileUpload(e) {
     const file = e.target.files[0];
-    onChange({ ...event, 'mediaFile': file });
+    onChange({ ...event, mediaFile: file });
   }
 
   return (
-    <div>
+    <div
+      style={{
+        boxSizing: "border-box",
+        padding: "1rem",
+        border: "1px solid black",
+        marginBottom: "1rem",
+      }}
+    >
       <div>
         Name:
-        <input name="name" value={event.name} onChange={handleChange} />
+        <input
+          name={`${formId}-name`}
+          value={event.name}
+          onChange={handleChange}
+        />
       </div>
       <div>
         Description:
-        <input name="desc" value={event.desc} onChange={handleChange} />
+        <input
+          name={`${formId}-desc`}
+          value={event.desc}
+          onChange={handleChange}
+        />
       </div>
       <div>
         Media Type:
         <div>
           <input
             type="radio"
-            id={`${event.name}-image`}
-            name="mediaType"
+            id={`${formId}-image`}
+            name={`${formId}-mediaType`}
             value="image"
             checked={event.mediaType === "image"}
             onChange={handleChange}
           />
-          <label htmlFor={`${event.name}-image`}>Image</label>
+          <label htmlFor={`${formId}-image`}>Image</label>
           <input
             type="radio"
-            id={`${event.name}-video`}
-            name="mediaType"
+            id={`${formId}-video`}
+            name={`${formId}-mediaType`}
             value="video"
             checked={event.mediaType === "video"}
             onChange={handleChange}
           />
-          <label htmlFor={`${event.name}-video`}>Video</label>
+          <label htmlFor={`${formId}-video`}>Video</label>
           <input
             type="radio"
-            id={`${event.name}-audio`}
-            name="mediaType"
+            id={`${formId}-audio`}
+            name={`${formId}-mediaType`}
             value="audio"
             checked={event.mediaType === "audio"}
             onChange={handleChange}
           />
-          <label htmlFor={`${event.name}-audio`}>Audio</label>
+          <label htmlFor={`${formId}-audio`}>Audio</label>
         </div>
       </div>
       <div>
-        Upload:
-        <input type="file" name="mediaFile" onChange={handleFileUpload} />
+        <button>
+          <label htmlFor={`${formId}-mediaFile`}>Upload</label>
+        </button>
+        <input
+          type="file"
+          accept={`${event.mediaType}/*`}
+          id={`${formId}-mediaFile`}
+          name="mediaFile"
+          onChange={handleFileUpload}
+          style={{ opacity: 0 }}
+        />
+        <div>{event.mediaFile?.name ?? "No file selected"}</div>
       </div>
     </div>
   );
 }
-
-function EventPreview({ event }) {}
 
 export default App;
