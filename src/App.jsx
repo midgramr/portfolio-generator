@@ -52,9 +52,9 @@ function EventPreview({ event }) {
       return event.mediaType === "image" ? (
         <img src={mediaUrl} />
       ) : event.mediaType === "audio" ? (
-        <></>
+        <audio src={mediaUrl} controls />
       ) : (
-        <></>
+        <video src={mediaUrl} width='800px' controls />
       );
     } else {
       return <div>No media uploaded.</div>;
@@ -120,8 +120,8 @@ function EventForm({ event, onChange }) {
       <div>
         Media Type:
         <div>
-          {["image", "audio", "video"].map((type) => (
-            <span>
+          {["image", "audio", "video"].map((type, i) => (
+            <span key={i}>
               <input
                 type="radio"
                 id={`${formId}-${type}`}
