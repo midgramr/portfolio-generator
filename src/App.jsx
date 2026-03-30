@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useId } from "react";
+import { useState, useId } from "react";
 
 // High-level idea: create a single page with a 'edit' and 'preview' mode
 
@@ -78,17 +77,19 @@ function EventForm({ event, onChange }) {
   function handleChange(e) {
     const name = e.target.name.substr(e.target.name.indexOf("-") + 1);
     let updated = { ...event, [name]: e.target.value };
-
     if (name == "mediaType" && e.target.value != event.mediaType) {
       updated = { ...updated, mediaFile: null };
     }
-
     onChange(updated);
   }
 
   function handleFileUpload(e) {
     const file = e.target.files[0];
     onChange({ ...event, mediaFile: file });
+  }
+
+  function capitalize(word) {
+    return word.charAt(0).toUpperCase() + word.substr(1);
   }
 
   return (
@@ -119,33 +120,19 @@ function EventForm({ event, onChange }) {
       <div>
         Media Type:
         <div>
-          <input
-            type="radio"
-            id={`${formId}-image`}
-            name={`${formId}-mediaType`}
-            value="image"
-            checked={event.mediaType === "image"}
-            onChange={handleChange}
-          />
-          <label htmlFor={`${formId}-image`}>Image</label>
-          <input
-            type="radio"
-            id={`${formId}-video`}
-            name={`${formId}-mediaType`}
-            value="video"
-            checked={event.mediaType === "video"}
-            onChange={handleChange}
-          />
-          <label htmlFor={`${formId}-video`}>Video</label>
-          <input
-            type="radio"
-            id={`${formId}-audio`}
-            name={`${formId}-mediaType`}
-            value="audio"
-            checked={event.mediaType === "audio"}
-            onChange={handleChange}
-          />
-          <label htmlFor={`${formId}-audio`}>Audio</label>
+          {["image", "audio", "video"].map((type) => (
+            <span>
+              <input
+                type="radio"
+                id={`${formId}-${type}`}
+                name={`${formId}-mediaType`}
+                value={type}
+                checked={event.mediaType === type}
+                onChange={handleChange}
+              />
+              <label htmlFor={`${formId}-${type}`}>{capitalize(type)}</label>
+            </span>
+          ))}
         </div>
       </div>
       <div>
