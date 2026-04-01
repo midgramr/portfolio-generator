@@ -1,4 +1,4 @@
-import { useState, useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 // High-level idea: create a single page with a 'edit' and 'preview' mode
 
@@ -44,29 +44,33 @@ function App() {
 }
 
 function EventPreview({ event }) {
-  function renderMedia() {
-    const mediaUrl = event.mediaFile
+  const mediaUrlRef = useRef(null);
+  const mediaElementRef = useRef(null);
+
+  useEffect(() => {
+    if (!event.mediaFile) { return; }
+    mediaUrlRef.current = event.mediaFile
       ? URL.createObjectURL(event.mediaFile)
       : null;
-    if (mediaUrl) {
-      return event.mediaType === "image" ? (
-        <img src={mediaUrl} />
-      ) : event.mediaType === "audio" ? (
-        <audio src={mediaUrl} controls />
-      ) : (
-        <video src={mediaUrl} width='800px' controls />
-      );
-    } else {
-      return <div>No media uploaded.</div>;
-    }
-  }
+    mediaElementRef.current.src = mediaUrlRef.current;
+    return () => URL.revokeObjectURL(mediaUrlRef.current);
+  }, [event]);
 
-  const media = renderMedia();
   return (
     <div style={{ padding: "2rem", border: "1px solid black" }}>
       <div>Name: {event.name}</div>
       <div>Description: {event.desc}</div>
-      {media}
+      {event.mediaFile ? (
+        event.mediaType === "image" ? (
+          <img ref={mediaElementRef} />
+        ) : event.mediaType === "audio" ? (
+          <audio ref={mediaElementRef} controls />
+        ) : (
+          <video ref={mediaElementRef} width="800px" controls />
+        )
+      ) : (
+        <div>No media uploaded.</div>
+      )}
     </div>
   );
 }
