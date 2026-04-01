@@ -49,9 +49,7 @@ function EventPreview({ event }) {
 
   useEffect(() => {
     if (!event.mediaFile) { return; }
-    mediaUrlRef.current = event.mediaFile
-      ? URL.createObjectURL(event.mediaFile)
-      : null;
+    mediaUrlRef.current = URL.createObjectURL(event.mediaFile);
     mediaElementRef.current.src = mediaUrlRef.current;
     return () => URL.revokeObjectURL(mediaUrlRef.current);
   }, [event]);
