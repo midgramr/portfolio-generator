@@ -1,6 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-
-// High-level idea: create a single page with a 'edit' and 'preview' mode
+import "./App.css";
 
 function newEvent() {
   return { name: "", desc: "", mediaType: "image", mediaFile: null };
@@ -16,16 +15,13 @@ function App() {
 
   function updateEvent(updated, idx) {
     setEvents((events) =>
-      events.map((event, i) => (i == idx ? updated : event)),
+      events.map((event, i) => (i === idx ? updated : event)),
     );
   }
 
-  function togglePreview() {
-    setPreview((p) => !p);
-  }
-
   return (
-    <div>
+    <div className="app">
+      <h1>Portfolio Builder</h1>
       {events.map((event, i) =>
         preview ? (
           <EventPreview key={i} event={event} />
@@ -33,12 +29,23 @@ function App() {
           <EventForm
             key={i}
             event={event}
-            onChange={(event) => updateEvent(event, i)}
+            onChange={(updated) => updateEvent(updated, i)}
           />
         ),
       )}
-      {!preview && <button onClick={addEvent}>Add event</button>}
-      <button onClick={togglePreview}>Toggle preview</button>
+      <div className="actions">
+        {!preview && (
+          <button className="btn btn-ghost" onClick={addEvent}>
+            + Add event
+          </button>
+        )}
+        <button
+          className="btn btn-primary"
+          onClick={() => setPreview((p) => !p)}
+        >
+          {preview ? "Edit" : "Preview"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -48,26 +55,26 @@ function EventPreview({ event }) {
   const mediaElementRef = useRef(null);
 
   useEffect(() => {
-    if (!event.mediaFile) { return; }
+    if (!event.mediaFile) return;
     mediaUrlRef.current = URL.createObjectURL(event.mediaFile);
     mediaElementRef.current.src = mediaUrlRef.current;
     return () => URL.revokeObjectURL(mediaUrlRef.current);
   }, [event]);
 
   return (
-    <div style={{ padding: "2rem", border: "1px solid black" }}>
-      <div>Name: {event.name}</div>
-      <div>Description: {event.desc}</div>
+    <div className="card">
+      <p className="preview-name">{event.name || "Untitled"}</p>
+      <p className="preview-desc">{event.desc || "No description."}</p>
       {event.mediaFile ? (
         event.mediaType === "image" ? (
-          <img ref={mediaElementRef} />
+          <img ref={mediaElementRef} className="preview-media" />
         ) : event.mediaType === "audio" ? (
           <audio ref={mediaElementRef} controls />
         ) : (
-          <video ref={mediaElementRef} width="800px" controls />
+          <video ref={mediaElementRef} className="preview-media" controls />
         )
       ) : (
-        <div>No media uploaded.</div>
+        <span className="muted">No media uploaded.</span>
       )}
     </div>
   );
@@ -79,15 +86,14 @@ function EventForm({ event, onChange }) {
   function handleChange(e) {
     const name = e.target.name.substr(e.target.name.indexOf("-") + 1);
     let updated = { ...event, [name]: e.target.value };
-    if (name == "mediaType" && e.target.value != event.mediaType) {
+    if (name === "mediaType" && e.target.value !== event.mediaType) {
       updated = { ...updated, mediaFile: null };
     }
     onChange(updated);
   }
 
   function handleFileUpload(e) {
-    const file = e.target.files[0];
-    onChange({ ...event, mediaFile: file });
+    onChange({ ...event, mediaFile: e.target.files[0] });
   }
 
   function capitalize(word) {
@@ -95,61 +101,71 @@ function EventForm({ event, onChange }) {
   }
 
   return (
-    <div
-      style={{
-        boxSizing: "border-box",
-        padding: "1rem",
-        border: "1px solid black",
-        marginBottom: "1rem",
-      }}
-    >
-      <div>
-        Name:
+    <div className="card">
+      <div className="field">
+        <label className="label" htmlFor={`${formId}-name`}>
+          Name
+        </label>
         <input
+          className="text-input"
+          id={`${formId}-name`}
           name={`${formId}-name`}
           value={event.name}
           onChange={handleChange}
+          placeholder="Event name"
         />
       </div>
-      <div>
-        Description:
+      <div className="field">
+        <label className="label" htmlFor={`${formId}-desc`}>
+          Description
+        </label>
         <input
+          className="text-input"
+          id={`${formId}-desc`}
           name={`${formId}-desc`}
           value={event.desc}
           onChange={handleChange}
+          placeholder="Short description"
         />
       </div>
-      <div>
-        Media Type:
-        <div>
-          {["image", "audio", "video"].map((type, i) => (
-            <span key={i}>
+      <div className="field">
+        <span className="label">Media Type</span>
+        <div className="radio-group">
+          {["image", "audio", "video"].map((type) => (
+            <label key={type} className="radio-label">
               <input
                 type="radio"
-                id={`${formId}-${type}`}
                 name={`${formId}-mediaType`}
                 value={type}
                 checked={event.mediaType === type}
                 onChange={handleChange}
               />
-              <label htmlFor={`${formId}-${type}`}>{capitalize(type)}</label>
-            </span>
+              {capitalize(type)}
+            </label>
           ))}
         </div>
       </div>
-      <div>
-        <button>
-          <label htmlFor={`${formId}-mediaFile`}>Upload</label>
-        </button>
+      <div
+        className="field"
+        style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+      >
+        <label
+          className="btn btn-ghost"
+          htmlFor={`${formId}-mediaFile`}
+          style={{ cursor: "pointer" }}
+        >
+          Upload
+        </label>
         <input
           type="file"
           accept={`${event.mediaType}/*`}
           id={`${formId}-mediaFile`}
-          name="mediaFile"
           onChange={handleFileUpload}
-          style={{ opacity: 0 }}
+          style={{ display: "none" }}
         />
-        <div>{event.mediaFile?.name ?? "No file selected"}</div>
+        <span className="muted">
+          {event.mediaFile?.name ?? "No file selected"}
+        </span>
       </div>
     </div>
   );
