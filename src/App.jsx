@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import "./App.css";
 
 function newEvent() {
-  return { name: "", desc: "", mediaType: "image", mediaFile: null };
+  return { name: "", desc: "", date: "", mediaType: "image", mediaFile: null };
 }
 
 function fileToDataUrl(file) {
@@ -33,15 +33,32 @@ function App() {
     setApiKey(key);
     setShowApiKeyModal(false);
   }
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const dragSrc = useRef(null);
 
   function addEvent() {
-    setEvents((events) => [...events, newEvent()]);
+    setEvents((e) => [...e, newEvent()]);
+  }
+  function deleteEvent(idx) {
+    setEvents((e) => e.filter((_, i) => i !== idx));
+  }
+  function updateEvent(updated, idx) {
+    setEvents((e) => e.map((ev, i) => (i === idx ? updated : ev)));
   }
 
-  function updateEvent(updated, idx) {
-    setEvents((events) =>
-      events.map((event, i) => (i === idx ? updated : event)),
-    );
+  function handleDragStart(idx) {
+    dragSrc.current = idx;
+  }
+  function handleDrop(idx) {
+    if (dragSrc.current === null || dragSrc.current === idx) return;
+    setEvents((e) => {
+      const next = [...e];
+      const [moved] = next.splice(dragSrc.current, 1);
+      next.splice(idx, 0, moved);
+      return next;
+    });
+    dragSrc.current = null;
+    setDragOverIdx(null);
   }
 
   async function exportHTML() {
@@ -124,11 +141,29 @@ ${body}
         preview ? (
           <EventPreview key={i} event={event} />
         ) : (
-          <EventForm
+          <div
             key={i}
-            event={event}
-            onChange={(updated) => updateEvent(updated, i)}
-          />
+            draggable
+            onDragStart={() => handleDragStart(i)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverIdx(i);
+            }}
+            onDragLeave={() => setDragOverIdx(null)}
+            onDrop={() => handleDrop(i)}
+            className={`card${dragOverIdx === i ? " drag-over" : ""}`}
+          >
+            <div className="card-header">
+              <span>⠿ drag to reorder</span>
+              <button className="btn-danger" onClick={() => deleteEvent(i)}>
+                Delete
+              </button>
+            </div>
+            <EventForm
+              event={event}
+              onChange={(updated) => updateEvent(updated, i)}
+            />
+          </div>
         ),
       )}
       <div className="actions">
@@ -151,6 +186,31 @@ ${body}
   );
 }
 
+// Used only for export — accepts mediaDataUrl instead of a File object
+function ExportItem({ event }) {
+  const { name, desc, date, mediaType, mediaDataUrl } = event;
+
+  let media = null;
+  if (mediaDataUrl) {
+    if (mediaType === "image")
+      media = <img src={mediaDataUrl} className="preview-media" />;
+    else if (mediaType === "audio")
+      media = <audio src={mediaDataUrl} controls />;
+    else
+      media = <video src={mediaDataUrl} controls className="preview-media" />;
+  }
+
+  return (
+    <div className="timeline-item">
+      <div className="timeline-dot" />
+      <div className="timeline-date">{date}</div>
+      <p className="preview-name">{name || "Untitled"}</p>
+      <p className="preview-desc">{desc}</p>
+      {media}
+    </div>
+  );
+}
+
 function EventPreview({ event }) {
   const mediaUrlRef = useRef(null);
   const mediaElementRef = useRef(null);
@@ -163,7 +223,9 @@ function EventPreview({ event }) {
   }, [event]);
 
   return (
-    <div className="card">
+    <div className="timeline-item">
+      <div className="timeline-dot" />
+      <div className="timeline-date">{event.date || "No date"}</div>
       <p className="preview-name">{event.name || "Untitled"}</p>
       <p className="preview-desc">{event.desc || "No description."}</p>
       {event.mediaFile ? (
@@ -230,7 +292,7 @@ function EventForm({ event, onChange }) {
   }
 
   return (
-    <div className="card">
+    <>
       <div className="field">
         <label className="label" htmlFor={`${formId}-name`}>
           Name
@@ -242,6 +304,19 @@ function EventForm({ event, onChange }) {
           value={event.name}
           onChange={handleChange}
           placeholder="Event name"
+        />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor={`${formId}-date`}>
+          Date
+        </label>
+        <input
+          className="text-input"
+          id={`${formId}-date`}
+          name={`${formId}-date`}
+          type="date"
+          value={event.date}
+          onChange={handleChange}
         />
       </div>
       <div className="field">
@@ -274,11 +349,8 @@ function EventForm({ event, onChange }) {
           ))}
         </div>
       </div>
-      <div className="field field-upload">
-        <label
-          className="btn btn-ghost upload-label"
-          htmlFor={`${formId}-mediaFile`}
-        >
+      <div className="field upload-row">
+        <label className="btn btn-ghost" htmlFor={`${formId}-mediaFile`}>
           Upload
         </label>
         <input
@@ -314,7 +386,7 @@ function EventForm({ event, onChange }) {
           {error && <span className="error-message">{error}</span>}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -353,28 +425,6 @@ function ApiKeyModal({ currentKey, onSave, onClose }) {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ExportItem({ event }) {
-  return (
-    <div className="timeline-item">
-      <div className="timeline-dot"></div>
-      <p className="preview-name">{event.name || "Untitled"}</p>
-      <p className="preview-desc">{event.desc || "No description."}</p>
-      {event.mediaDataUrl &&
-        (event.mediaType === "image" ? (
-          <img
-            src={event.mediaDataUrl}
-            className="preview-media"
-            alt={event.name}
-          />
-        ) : event.mediaType === "audio" ? (
-          <audio src={event.mediaDataUrl} controls />
-        ) : (
-          <video src={event.mediaDataUrl} className="preview-media" controls />
-        ))}
     </div>
   );
 }
