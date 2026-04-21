@@ -1,7 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { setApiKey, isConfigured, generateImage } from "./aiService";
+import {
+  setApiKey,
+  isConfigured,
+  generateImage,
+  generateAudio,
+  generateVideo,
+  OPENAI_TTS_VOICES,
+  moderateUploadedImage,
+  moderateUploadedVideo,
+} from "./aiService";
 import { renderToStaticMarkup } from "react-dom/server";
 import "./App.css";
+
+const ENV_OPENAI_API_KEY = (import.meta.env.VITE_OPENAI_API_KEY || "").trim();
 
 function newEvent() {
   return { name: "", desc: "", date: "", mediaType: "image", mediaFile: null };
@@ -15,26 +26,30 @@ function fileToDataUrl(file) {
   });
 }
 
+// ─── App ─────────────────────────────────────────────────────────────────────
+
 function App() {
   const [events, setEvents] = useState([newEvent()]);
   const [preview, setPreview] = useState(false);
-  const [apiKey, setApiKeyState] = useState(() => {
-    const savedKey = localStorage.getItem("openai_api_key");
-    if (savedKey) {
-      setApiKey(savedKey);
-    }
-    return savedKey || "";
-  });
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
-  function saveApiKey(key) {
+  // OpenAI key
+  const [apiKey, setApiKeyState] = useState(() => {
+    const saved = localStorage.getItem("openai_api_key") || "";
+    const configuredKey = ENV_OPENAI_API_KEY || saved;
+    if (configuredKey) setApiKey(configuredKey);
+    return configuredKey;
+  });
+  const [showOpenAIModal, setShowOpenAIModal] = useState(false);
+
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const dragSrc = useRef(null);
+
+  function saveOpenAIKey(key) {
     localStorage.setItem("openai_api_key", key);
     setApiKeyState(key);
     setApiKey(key);
-    setShowApiKeyModal(false);
+    setShowOpenAIModal(false);
   }
-  const [dragOverIdx, setDragOverIdx] = useState(null);
-  const dragSrc = useRef(null);
 
   function addEvent() {
     setEvents((e) => [...e, newEvent()]);
@@ -93,12 +108,15 @@ h1{font-family:'Cormorant Garamond',serif;font-size:2.25rem;font-weight:600;marg
 .timeline::before{content:'';position:absolute;left:0.5rem;top:0.5rem;bottom:0.5rem;width:1px;background:var(--border)}
 .timeline-item{position:relative;margin-bottom:2.25rem}
 .timeline-dot{position:absolute;left:-1.625rem;top:0.5rem;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+.preview-layout{display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;align-items:start}
+.preview-media-col{min-height:80px}
 .preview-name{font-family:'Cormorant Garamond',serif;font-size:1.75rem;font-weight:600;margin:0 0 0.4rem}
 .preview-desc{color:var(--muted);margin:0 0 1rem;line-height:1.6;font-size:0.9rem}
 .preview-media{max-width:100%;border-radius:4px;margin-bottom:1rem}
 audio{width:100%;margin-bottom:1rem}
 video{max-width:100%;border-radius:4px;margin-bottom:1rem}
 .muted{color:var(--muted);font-size:0.85rem}
+@media (max-width:720px){.preview-layout{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -121,22 +139,31 @@ ${body}
   return (
     <div className="app">
       <h1>Portfolio Builder</h1>
-      <div className="api-key-header">
+
+      {/* API key controls */}
+      <div className="api-keys-bar">
         <button
           className="btn btn-ghost"
-          onClick={() => setShowApiKeyModal(true)}
+          onClick={() => setShowOpenAIModal(true)}
         >
-          {isConfigured() ? "Update API Key" : "Set API Key"}
+          {isConfigured() ? "Update OpenAI Key" : "Set OpenAI Key"}
         </button>
-        {isConfigured() && <span className="muted">API key configured</span>}
+        {isConfigured() && (
+          <span className="api-badge api-badge-openai">✓ OpenAI</span>
+        )}
       </div>
-      {showApiKeyModal && (
+
+      {showOpenAIModal && (
         <ApiKeyModal
+          title="OpenAI API Key"
+          description="Required for DALL-E 3 image generation. Get yours at platform.openai.com/api-keys"
+          placeholder="sk-..."
           currentKey={apiKey}
-          onSave={saveApiKey}
-          onClose={() => setShowApiKeyModal(false)}
+          onSave={saveOpenAIKey}
+          onClose={() => setShowOpenAIModal(false)}
         />
       )}
+
       {events.map((event, i) =>
         preview ? (
           <EventPreview key={i} event={event} />
@@ -166,6 +193,7 @@ ${body}
           </div>
         ),
       )}
+
       <div className="actions">
         {!preview && (
           <button className="btn btn-ghost" onClick={addEvent}>
@@ -186,7 +214,8 @@ ${body}
   );
 }
 
-// Used only for export — accepts mediaDataUrl instead of a File object
+// ─── Export helper ────────────────────────────────────────────────────────────
+
 function ExportItem({ event }) {
   const { name, desc, date, mediaType, mediaDataUrl } = event;
 
@@ -203,13 +232,21 @@ function ExportItem({ event }) {
   return (
     <div className="timeline-item">
       <div className="timeline-dot" />
-      <div className="timeline-date">{date}</div>
-      <p className="preview-name">{name || "Untitled"}</p>
-      <p className="preview-desc">{desc}</p>
-      {media}
+      <div className="preview-layout">
+        <div>
+          <div className="timeline-date">{date}</div>
+          <p className="preview-name">{name || "Untitled"}</p>
+          <p className="preview-desc">{desc}</p>
+        </div>
+        <div className="preview-media-col">
+          {media || <span className="muted">No media uploaded.</span>}
+        </div>
+      </div>
     </div>
   );
 }
+
+// ─── Preview ──────────────────────────────────────────────────────────────────
 
 function EventPreview({ event }) {
   const mediaUrlRef = useRef(null);
@@ -225,29 +262,35 @@ function EventPreview({ event }) {
   return (
     <div className="timeline-item">
       <div className="timeline-dot" />
-      <div className="timeline-date">{event.date || "No date"}</div>
-      <p className="preview-name">{event.name || "Untitled"}</p>
-      <p className="preview-desc">{event.desc || "No description."}</p>
-      {event.mediaFile ? (
-        event.mediaType === "image" ? (
-          <img ref={mediaElementRef} className="preview-media" />
-        ) : event.mediaType === "audio" ? (
-          <audio ref={mediaElementRef} controls />
-        ) : (
-          <video ref={mediaElementRef} className="preview-media" controls />
-        )
-      ) : (
-        <span className="muted">No media uploaded.</span>
-      )}
+      <div className="preview-layout">
+        <div>
+          <div className="timeline-date">{event.date || "No date"}</div>
+          <p className="preview-name">{event.name || "Untitled"}</p>
+          <p className="preview-desc">{event.desc || "No description."}</p>
+        </div>
+        <div className="preview-media-col">
+          {event.mediaFile ? (
+            event.mediaType === "image" ? (
+              <img ref={mediaElementRef} className="preview-media" />
+            ) : event.mediaType === "audio" ? (
+              <audio ref={mediaElementRef} controls />
+            ) : (
+              <video ref={mediaElementRef} className="preview-media" controls />
+            )
+          ) : (
+            <span className="muted">No media uploaded.</span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
+// ─── Event Form ───────────────────────────────────────────────────────────────
+
 function EventForm({ event, onChange }) {
   const formId = useId();
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState("");
+  const [uploadError, setUploadError] = useState("");
 
   function handleChange(e) {
     const name = e.target.name.substr(e.target.name.indexOf("-") + 1);
@@ -259,32 +302,28 @@ function EventForm({ event, onChange }) {
   }
 
   function handleFileUpload(e) {
-    onChange({ ...event, mediaFile: e.target.files[0] });
-  }
+    const file = e.target.files[0];
+    if (!file) return;
 
-  async function handleAiGenerate() {
-    if (!isConfigured()) {
-      setError("Please set your OpenAI API key first");
-      return;
-    }
+    setUploadError("");
 
-    if (!aiPrompt.trim()) {
-      setError("Please enter a prompt");
-      return;
-    }
+    const runModeration = async () => {
+      try {
+        if (event.mediaType === "image") {
+          await moderateUploadedImage(file);
+        } else if (event.mediaType === "video") {
+          await moderateUploadedVideo(file);
+        }
 
-    setGenerating(true);
-    setError("");
+        onChange({ ...event, mediaFile: file });
+      } catch (error) {
+        setUploadError(error.message);
+        onChange({ ...event, mediaFile: null });
+        e.target.value = "";
+      }
+    };
 
-    try {
-      const file = await generateImage(aiPrompt);
-      onChange({ ...event, mediaFile: file });
-      setAiPrompt("");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setGenerating(false);
-    }
+    void runModeration();
   }
 
   function capitalize(word) {
@@ -349,6 +388,7 @@ function EventForm({ event, onChange }) {
           ))}
         </div>
       </div>
+
       <div className="field upload-row">
         <label className="btn btn-ghost" htmlFor={`${formId}-mediaFile`}>
           Upload
@@ -364,56 +404,198 @@ function EventForm({ event, onChange }) {
           {event.mediaFile?.name ?? "No file selected"}
         </span>
       </div>
-      {event.mediaType === "image" && (
-        <div className="field">
-          <label className="label">AI Generate Image</label>
-          <div className="ai-generate-controls">
-            <input
-              className="text-input ai-prompt-input"
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="Describe the image you want to generate..."
-              disabled={generating}
-            />
-            <button
-              className="btn btn-primary"
-              onClick={handleAiGenerate}
-              disabled={generating || !aiPrompt.trim()}
-            >
-              {generating ? "Generating..." : "Generate"}
-            </button>
-          </div>
-          {error && <span className="error-message">{error}</span>}
-        </div>
-      )}
+
+      {uploadError && <p className="error-message">{uploadError}</p>}
+
+      {/* AI Generation panel — shown for all media types */}
+      <AIGeneratePanel
+        mediaType={event.mediaType}
+        onGenerated={(file) => onChange({ ...event, mediaFile: file })}
+      />
+
+      <InlineMediaPreview
+        mediaFile={event.mediaFile}
+        mediaType={event.mediaType}
+      />
     </>
   );
 }
 
-function ApiKeyModal({ currentKey, onSave, onClose }) {
-  const [key, setKey] = useState(currentKey);
+function InlineMediaPreview({ mediaFile, mediaType }) {
+  const [mediaUrl, setMediaUrl] = useState("");
 
-  function handleSave() {
-    if (key.trim()) {
-      onSave(key.trim());
+  useEffect(() => {
+    if (!mediaFile) {
+      setMediaUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(mediaFile);
+    setMediaUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [mediaFile]);
+
+  if (!mediaUrl) return null;
+
+  return (
+    <div className="field">
+      <span className="label">Embedded Preview</span>
+      {mediaType === "image" ? (
+        <img src={mediaUrl} className="preview-media" alt="Generated preview" />
+      ) : mediaType === "audio" ? (
+        <audio src={mediaUrl} controls />
+      ) : (
+        <video src={mediaUrl} controls className="preview-media" />
+      )}
+    </div>
+  );
+}
+
+// ─── AI Generate Panel ────────────────────────────────────────────────────────
+
+function AIGeneratePanel({ mediaType, onGenerated }) {
+  const [prompt, setPrompt] = useState("");
+  const [ttsVoice, setTtsVoice] = useState("alloy");
+  const [generating, setGenerating] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleGenerate() {
+    setError("");
+    setStatus("");
+
+    if (!isConfigured()) {
+      setError("Please set your OpenAI API key first.");
+      return;
+    }
+
+    if (!prompt.trim()) {
+      setError("Please enter a prompt.");
+      return;
+    }
+
+    setGenerating(true);
+
+    try {
+      let file;
+
+      if (mediaType === "image") {
+        setStatus("Generating with DALL-E 3…");
+        file = await generateImage(prompt);
+      } else if (mediaType === "audio") {
+        setStatus("Generating speech with OpenAI TTS…");
+        file = await generateAudio(prompt, ttsVoice);
+      } else {
+        setStatus(
+          "Starting OpenAI video generation… this may take a few minutes ☕",
+        );
+        file = await generateVideo(prompt);
+      }
+
+      onGenerated(file);
+      setPrompt("");
+      setStatus("");
+    } catch (err) {
+      setError(err.message);
+      setStatus("");
+    } finally {
+      setGenerating(false);
     }
   }
 
+  const promptLabel =
+    mediaType === "audio" ? "Text to speak" : "Describe what to generate";
+
+  const promptPlaceholder =
+    mediaType === "audio"
+      ? "Enter the text you want spoken aloud…"
+      : mediaType === "video"
+        ? "A slow pan over a misty mountain valley at sunrise…"
+        : "A vibrant abstract painting of neural networks…";
+
   return (
-    <div className="modal-overlay">
-      <div className="card modal-card">
-        <h2>OpenAI API Key</h2>
-        <p className="muted modal-text">
-          Enter your OpenAI API key to enable AI image generation. Get your key
-          at: https://platform.openai.com/api-keys
+    <div className="field">
+      <span className="label">AI Generate</span>
+
+      {mediaType === "audio" && (
+        <div className="field" style={{ marginBottom: "0.75rem" }}>
+          <label className="label">Voice</label>
+          <select
+            className="select-input"
+            value={ttsVoice}
+            onChange={(e) => setTtsVoice(e.target.value)}
+            disabled={generating}
+          >
+            {OPENAI_TTS_VOICES.map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="ai-generate-controls">
+        <input
+          className="text-input ai-prompt-input"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={promptPlaceholder}
+          disabled={generating}
+        />
+        <button
+          className="btn btn-primary"
+          onClick={handleGenerate}
+          disabled={generating || !prompt.trim()}
+        >
+          {generating ? "…" : "Generate"}
+        </button>
+      </div>
+
+      {mediaType === "video" && (
+        <p className="info-note">
+          OpenAI video generation can take a few minutes. The page will wait
+          automatically.
         </p>
+      )}
+
+      {/* Status / spinner */}
+      {status && (
+        <div className="generation-status">
+          <span className="spinner" />
+          {status}
+        </div>
+      )}
+
+      {/* Error */}
+      {error && <p className="error-message">{error}</p>}
+    </div>
+  );
+}
+
+// ─── Generic API Key Modal ────────────────────────────────────────────────────
+
+function ApiKeyModal({ title, description, placeholder, currentKey, onSave, onClose }) {
+  const [key, setKey] = useState(currentKey);
+
+  function handleSave() {
+    if (key.trim()) onSave(key.trim());
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ marginTop: 0 }}>{title}</h2>
+        <p className="muted modal-text">{description}</p>
         <div className="field">
           <input
             className="text-input"
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-..."
+            placeholder={placeholder}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            autoFocus
           />
         </div>
         <div className="modal-actions">
