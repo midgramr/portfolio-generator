@@ -16,8 +16,8 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/openai/, ""),
           headers: openaiApiKey
             ? {
-                Authorization: `Bearer ${openaiApiKey}`,
-              }
+              Authorization: `Bearer ${openaiApiKey}`,
+            }
             : {},
         },
       },
