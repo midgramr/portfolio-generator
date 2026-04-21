@@ -1,33 +1,55 @@
-import OpenAI from "openai";
-
-let openaiClient = null;
 let openaiApiKey = "";
 
 export function setApiKey(apiKey) {
   openaiApiKey = apiKey;
-  openaiClient = new OpenAI({
-    apiKey,
-    dangerouslyAllowBrowser: true,
-  });
 }
 
 export function isConfigured() {
-  return openaiClient !== null;
+  return Boolean(openaiApiKey);
 }
 
 function assertConfigured() {
-  if (!openaiClient || !openaiApiKey) {
+  if (!openaiApiKey) {
     throw new Error("API key not configured. Please set your OpenAI API key.");
   }
+}
+
+function authHeaders() {
+  return openaiApiKey ? { Authorization: `Bearer ${openaiApiKey}` } : {};
+}
+
+async function callOpenAI(path, init = {}) {
+  const response = await fetch(`/api/openai${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      ...authHeaders(),
+    },
+  });
+
+  if (!response.ok) {
+    const message = await readApiError(
+      response,
+      `OpenAI API error: ${response.status}`,
+    );
+    throw new Error(message);
+  }
+
+  return response;
 }
 
 async function moderatePrompt(prompt) {
   assertConfigured();
 
-  const moderation = await openaiClient.moderations.create({
-    model: "omni-moderation-latest",
-    input: prompt,
+  const response = await callOpenAI("/moderations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "omni-moderation-latest",
+      input: prompt,
+    }),
   });
+  const moderation = await response.json();
 
   const result = moderation?.results?.[0];
   if (result?.flagged) {
@@ -46,15 +68,20 @@ async function moderatePrompt(prompt) {
 async function moderateImageDataUrl(dataUrl) {
   assertConfigured();
 
-  const moderation = await openaiClient.moderations.create({
-    model: "omni-moderation-latest",
-    input: [
-      {
-        type: "image_url",
-        image_url: { url: dataUrl },
-      },
-    ],
+  const response = await callOpenAI("/moderations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "omni-moderation-latest",
+      input: [
+        {
+          type: "image_url",
+          image_url: { url: dataUrl },
+        },
+      ],
+    }),
   });
+  const moderation = await response.json();
 
   const result = moderation?.results?.[0];
   if (result?.flagged) {
@@ -127,16 +154,24 @@ export async function generateImage(prompt) {
   assertConfigured();
 
   try {
-    const response = await openaiClient.images.generate({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1024x1024",
-      quality: "standard",
-      response_format: "b64_json",
+    const httpResponse = await callOpenAI("/images/generations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "dall-e-3",
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard",
+        response_format: "b64_json",
+      }),
     });
+    const response = await httpResponse.json();
 
-    const base64Data = response.data[0].b64_json;
+    const base64Data = response?.data?.[0]?.b64_json;
+    if (!base64Data) {
+      throw new Error("No image data was returned by the API.");
+    }
     const binaryData = atob(base64Data);
     const bytes = new Uint8Array(binaryData.length);
     for (let i = 0; i < binaryData.length; i++) {
@@ -157,14 +192,18 @@ export async function generateAudio(prompt, voice = "alloy") {
   assertConfigured();
 
   try {
-    const speech = await openaiClient.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice,
-      input: prompt,
-      format: "wav",
+    const response = await callOpenAI("/audio/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice,
+        input: prompt,
+        format: "wav",
+      }),
     });
 
-    const audioBuffer = await speech.arrayBuffer();
+    const audioBuffer = await response.arrayBuffer();
     const audioBlob = new Blob([audioBuffer], { type: "audio/wav" });
     return new File([audioBlob], `ai-audio-${Date.now()}.wav`, {
       type: "audio/wav",
@@ -181,7 +220,10 @@ export async function generateVideo(prompt) {
   try {
     const createRes = await fetch("/api/openai/videos", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      },
       body: JSON.stringify({
         model: "sora-2",
         prompt,
@@ -208,7 +250,11 @@ export async function generateVideo(prompt) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
 
-      const pollRes = await fetch(`/api/openai/videos/${videoId}`);
+      const pollRes = await fetch(`/api/openai/videos/${videoId}`, {
+        headers: {
+          ...authHeaders(),
+        },
+      });
       if (!pollRes.ok) {
         const message = await readApiError(
           pollRes,
@@ -225,7 +271,11 @@ export async function generateVideo(prompt) {
       }
 
       if (status === "completed") {
-        const mediaRes = await fetch(`/api/openai/videos/${videoId}/content`);
+        const mediaRes = await fetch(`/api/openai/videos/${videoId}/content`, {
+          headers: {
+            ...authHeaders(),
+          },
+        });
         if (!mediaRes.ok) {
           const message = await readApiError(
             mediaRes,
